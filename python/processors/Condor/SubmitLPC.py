@@ -48,7 +48,17 @@ def tar_cmssw():
     return cmsswtar
 
 def ConfigList(config):
+    #First grab era from config name. Expecting something like "sampleSets_2016.cfg". Default is 2016.
+    #May want to switch to ("2016.cfg" in config) in case the config file is somewhere that might have a different string, but should be in same directory to be copied to condor properly.
+    temp_era = 2016
+    if "2016" in config:
+        temp_era = 2016
+    if "2017" in config:
+        temp_era = 2017
+    if "2018" in config:
+        temp_era = 2018
     process = defaultdict(dict)
+    #TODO: Ensure this interprets data correctly
     #TODO: Split between sample set and sample collection configs
     lines = open(config).readlines()
     for line in lines:
@@ -57,15 +67,30 @@ def ConfigList(config):
         entry = line.split(",")
         stripped_entry = [ i.strip() for i in entry]
         print(stripped_entry)
-        process[stripped_entry[0]] = {
+
+        #Add MC processes
+        if "Data" not in stripped_entry[0]:
+          process[stripped_entry[0]] = {
             "Filepath__" : "%s/%s" % (stripped_entry[1], stripped_entry[2]),
             "Outpath__" : "%s" % (stripped_entry[1]) + "_" + ShortProjectName + "/",
-            "isData" : "Data" in stripped_entry[0],
+            "isData" : "Data" in stripped_entry[0], #False
             "isFastSim" : "fastsim" in stripped_entry[0],
-            "crossSection":  float(stripped_entry[4]) * float(stripped_entry[7]),
-            "nEvents":  int(stripped_entry[5]) - int(stripped_entry[6]),
-            "era" : 2016, #Temp
-        }
+            "crossSection":  float(stripped_entry[4]) * float(stripped_entry[7]), # cs * kfactor
+            "nEvents":  int(stripped_entry[5]) - int(stripped_entry[6]), #pos - neg weights
+            "era" : temp_era
+          }
+
+        #Add data processes
+        else:
+          process[stripped_entry[0]] = {
+            "Filepath__" : "%s/%s" % (stripped_entry[1], stripped_entry[2]),
+            "Outpath__" : "%s" % (stripped_entry[1]) + "_" + ShortProjectName + "/",
+            "isData" : "Data" in stripped_entry[0], #True
+            "isFastSim" : "fastsim" in stripped_entry[0],
+            "crossSection" : float[stripped_entry[4]], #actually lumi; saved like this for UpdateGenWeight module
+            "nEvents" : float[stripped_entry[5]], #actually kfactor (which should be 1); UpdateGenWeight
+            "era" : temp_era
+          }
 
     return process
 
@@ -139,20 +164,6 @@ def my_process(args):
     #except OSError:
     #    pass
 
-    """
-    ## Update RunHT.csh with DelDir and pileups
-    RunHTFile = tempdir + "/" + "RunExe.csh"
-    with open(RunHTFile, "wt") as outfile:
-        for line in open("RunExe.csh", "r"):
-            line = line.replace("DELSCR", os.environ['SCRAM_ARCH'])
-            line = line.replace("DELDIR", os.environ['CMSSW_VERSION'])
-            line = line.replace("DELEXE", DelExe.split('/')[-1])
-            line = line.replace("OUTDIR", outdir)
-            outfile.write(line)
-    """
-    #To have each job copy to a directory based on the input file, looks like I'd need to have a copy of RunExe.csh for name, sample in Process.items() as well.
-    #Needs to be inside the same name, sample for loop for the condor file so the condor file gets the correct EXECUTABLE name.  
-    
 
     ### Create Tarball
     Tarfiles = []
@@ -180,7 +191,6 @@ def my_process(args):
         
         #define output directory
         outdir = sample["Outpath__"]
-        # outputfile = "{common_name}_$(Process).root ".format(common_name=name)
 
         #Update RunExe.csh
         RunHTFile = tempdir + "/" + name + "_RunExe"
@@ -190,11 +200,10 @@ def my_process(args):
                 line = line.replace("DELDIR", os.environ['CMSSW_VERSION'])
                 line = line.replace("DELEXE", DelExe.split('/')[-1])
                 line = line.replace("OUTDIR", outdir)
-                # line = line.replace("OUTFILE", outputfile)
                 outfile.write(line)
 
         #Update condor file        
-        # arg = "\nArguments = --inputfile={common_name}.$(Process).list ".format(common_name=name)
+        #First argument is output file name. Rest are to be passed to Stop0l_postproc.py.
         arg = "\nArguments = {common_name}_$(Process).root --inputfile={common_name}.$(Process).list ".format(common_name=name)
         for k, v in sample.items():
             if "__" not in k:

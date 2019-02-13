@@ -38,7 +38,7 @@ def tar_cmssw():
         exclude_patterns = ['/.git/', '/tmp/', '/jobs.*/', '/logs/', '/.SCRAM/', '.pyc']
         for pattern in exclude_patterns:
             if re.search(pattern, tarinfo.name):
-                print('ignoring %s in the tarball', tarinfo.name)
+                # print('ignoring %s in the tarball', tarinfo.name)
                 tarinfo = None
                 break
         return tarinfo
@@ -61,40 +61,32 @@ def ConfigList(config):
     #TODO: Ensure this interprets data correctly
     #TODO: Split between sample set and sample collection configs
     lines = open(config).readlines()
-    for line in lines:
+    for line_ in lines:
+        line = line_.strip()
         if(len(line) <= 0 or line[0] == '#'):
             continue
         entry = line.split(",")
         stripped_entry = [ i.strip() for i in entry]
         print(stripped_entry)
 
-        #Add MC processes
-        if "Data" not in stripped_entry[0]:
-          process[stripped_entry[0]] = {
+        process[stripped_entry[0]] = {
             "Filepath__" : "%s/%s" % (stripped_entry[1], stripped_entry[2]),
-            "Outpath__" : "%s" % (stripped_entry[1]) + "_" + ShortProjectName + "/",
-            "isData" : "Data" in stripped_entry[0], #False
+            "Outpath__" : "%s" % (stripped_entry[1]) + "/" + ShortProjectName + "/" + stripped_entry[0]+"/",
+            "isData" : "Data" in stripped_entry[0],
             "isFastSim" : "fastsim" in stripped_entry[0],
-            "crossSection":  float(stripped_entry[4]) * float(stripped_entry[7]), # cs * kfactor
-            "nEvents":  int(stripped_entry[5]) - int(stripped_entry[6]), #pos - neg weights
-            "era" : temp_era
-          }
-
-        #Add data processes
+            "era" : temp_era, #era from args
+        }
+        if process[stripped_entry[0]]["isData"]:
+            process[stripped_entry[0]].update( {
+                "crossSection":  float(stripped_entry[4]) , #storing lumi for data
+                "nEvents":  int(stripped_entry[5]),
+            })
         else:
-          process[stripped_entry[0]] = {
-            "Filepath__" : "%s/%s" % (stripped_entry[1], stripped_entry[2]),
-            "Outpath__" : "%s" % (stripped_entry[1]) + "_" + ShortProjectName + "/",
-            "isData" : "Data" in stripped_entry[0], #True
-            "isFastSim" : "fastsim" in stripped_entry[0],
-            "crossSection" : float[stripped_entry[4]], #actually lumi; saved like this for UpdateGenWeight module
-            "nEvents" : float[stripped_entry[5]], #actually kfactor (which should be 1); UpdateGenWeight
-            "era" : temp_era
-          }
-
+            process[stripped_entry[0]].update( {
+                "crossSection":  float(stripped_entry[4]) * float(stripped_entry[7]),
+                "nEvents":  int(stripped_entry[5]) - int(stripped_entry[6]), # using all event weight
+            })
     return process
-
-
 
 def Condor_Sub(condor_file):
     curdir = os.path.abspath(os.path.curdir)
@@ -104,7 +96,7 @@ def Condor_Sub(condor_file):
     os.chdir(curdir)
 
 
-def SplitPro(key, file, fraction=10):
+def SplitPro(key, file, lineperfile=20):
     splitedfiles = []
     filelistdir = tempdir + '/' + "FileList"
     try:
@@ -113,24 +105,18 @@ def SplitPro(key, file, fraction=10):
         pass
 
     filename = os.path.abspath(file)
-    if fraction == 1:
-        #splitedfiles.append(os.path.abspath(filename))
-        #shutil.copy2(os.path.abspath(filename), "%s/%s" % (filelistdir, os.path.abspath(filename)))
+
+    f = open(filename, 'r')
+    lines = f.readlines()
+
+    if len(lines) <= lineperfile:
         shutil.copy2(os.path.abspath(filename), "%s/%s.0.list" % (filelistdir, key))
         splitedfiles.append(os.path.abspath("%s/%s.0.list" % (filelistdir, key)))
         return splitedfiles
 
-    print(filename)
-    f = open(filename, 'r')
-    lines = f.readlines()
-    if len(lines) <= fraction:
-        lineperfile = 1
-        fraction = len(lines)
-    else:
-        lineperfile = len(lines) / fraction
-        if len(lines) % fraction > 0:
-            lineperfile += 1
-
+    fraction = len(lines) / lineperfile
+    if len(lines) % lineperfile > 0:
+        fraction += 1
 
     for i in range(0, fraction):
         wlines = []
@@ -164,13 +150,15 @@ def my_process(args):
     #except OSError:
     #    pass
 
+    #To have each job copy to a directory based on the input file, looks like I'd need to have a copy of RunExe.csh for name, sample in Process.items() as well.
+    #Needs to be inside the same name, sample for loop for the condor file so the condor file gets the correct EXECUTABLE name.
 
     ### Create Tarball
     Tarfiles = []
     NewNpro = {}
 
     ##Read config file
-    Process = ConfigList(os.path.abspath(args.config))
+    Process = ConfigList(os.path.abspath(args.config), args.era)
     for key, sample in Process.items():
         print("Getting process: " + key + " " + sample['Filepath__'])
         npro = SplitPro(key, sample['Filepath__'])
@@ -184,16 +172,15 @@ def my_process(args):
         tar.close()
     tarballname += " , %s, " % tar_cmssw()
     tarballname += " , ".join([os.path.abspath(i) for i in sendfiles])
-    print(tarballname)
 
     ### Update condor and RunExe files
     for name, sample in Process.items():
-        
+
         #define output directory
         outdir = sample["Outpath__"]
 
         #Update RunExe.csh
-        RunHTFile = tempdir + "/" + name + "_RunExe"
+        RunHTFile = tempdir + "/" + name + "_RunExe.csh"
         with open(RunHTFile, "wt") as outfile:
             for line in open("RunExe.csh","r"):
                 line = line.replace("DELSCR", os.environ['SCRAM_ARCH'])
@@ -221,7 +208,7 @@ def my_process(args):
                 line = line.replace("ARGUMENTS", arg)
                 outfile.write(line)
 
-        Condor_Sub(condorfile) 
+        Condor_Sub(condorfile)
 
 def GetProcess(key, value):
     if len(value) == 1:
@@ -234,6 +221,9 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config',
         default = "sampleconfig.cfg",
         help = 'Path to the input config file.')
+    parser.add_argument('-e', '--era',
+        default = "2016",type=int,
+        help = 'Era of the config file')
 
     args = parser.parse_args()
     my_process(args)

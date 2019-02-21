@@ -12,12 +12,11 @@ import getpass
 import argparse
 from collections import defaultdict
 
-# TODO: set OutDir (and ProjectName?) to be modified based on input filelist location
 DelExe    = '../Stop0l_postproc.py'
-#OutDir = '/store/user/%s/StopStudy' %  getpass.getuser()
 tempdir = '/uscms_data/d3/%s/condor_temp/' % getpass.getuser()
-ShortProjectName = 'PostProcess_v1'
-argument = "--inputFiles=%s.$(Process).list "
+ShortProjectName = 'PostProcess'
+VersionNumber = '_v1'
+
 sendfiles = ["../keep_and_drop.txt"]
 
 def tar_cmssw():
@@ -67,11 +66,13 @@ def ConfigList(config):
             continue
         entry = line.split(",")
         stripped_entry = [ i.strip() for i in entry]
-        print(stripped_entry)
+        #print(stripped_entry)
+        replaced_outdir = stripped_entry[1].replace("Pre","Post")
 
         process[stripped_entry[0]] = {
             "Filepath__" : "%s/%s" % (stripped_entry[1], stripped_entry[2]),
-            "Outpath__" : "%s" % (stripped_entry[1]) + "/" + ShortProjectName + "/" + stripped_entry[0]+"/",
+            #"Outpath__" : "%s" % (stripped_entry[1]) + "/" + ShortProjectName + VersionNumber + "/" + stripped_entry[0] + "/",
+            "Outpath__" : "%s" % (replaced_outdir) + VersionNumber + "/" + stripped_entry[0] + "/",
             "isData" : "Data" in stripped_entry[0],
             "isFastSim" : "fastsim" in stripped_entry[0],
             "era" : temp_era, #era from args
@@ -79,7 +80,7 @@ def ConfigList(config):
         if process[stripped_entry[0]]["isData"]:
             process[stripped_entry[0]].update( {
                 "crossSection":  float(stripped_entry[4]) , #storing lumi for data
-                "nEvents":  int(stripped_entry[5]),
+                "nEvents":  float(stripped_entry[5]),
             })
         else:
             process[stripped_entry[0]].update( {
@@ -136,7 +137,7 @@ def my_process(args):
     ## temp dir for submit
     global tempdir
     global ProjectName
-    ProjectName = time.strftime('%b%d') + ShortProjectName
+    ProjectName = time.strftime('%b%d') + ShortProjectName + VersionNumber
     tempdir = tempdir + os.getlogin() + "/" + ProjectName +  "/"
     try:
         os.makedirs(tempdir)
@@ -158,7 +159,8 @@ def my_process(args):
     NewNpro = {}
 
     ##Read config file
-    Process = ConfigList(os.path.abspath(args.config), args.era)
+    Process = ConfigList(os.path.abspath(args.config))
+    #Process = ConfigList(os.path.abspath(args.config), args.era)
     for key, sample in Process.items():
         print("Getting process: " + key + " " + sample['Filepath__'])
         npro = SplitPro(key, sample['Filepath__'])
@@ -177,7 +179,8 @@ def my_process(args):
     for name, sample in Process.items():
 
         #define output directory
-        outdir = sample["Outpath__"]
+        if args.outputdir == "": outdir = sample["Outpath__"]
+        else: outdir = args.outputdir
 
         #Update RunExe.csh
         RunHTFile = tempdir + "/" + name + "_RunExe.csh"
@@ -224,6 +227,9 @@ if __name__ == "__main__":
     parser.add_argument('-e', '--era',
         default = "2016",type=int,
         help = 'Era of the config file')
+    parser.add_argument('-o', '--outputdir',
+        default = "", 
+        help = 'Path to the output directory.')
 
     args = parser.parse_args()
     my_process(args)

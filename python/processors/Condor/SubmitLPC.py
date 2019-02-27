@@ -49,13 +49,17 @@ def tar_cmssw():
 def ConfigList(config):
     #First grab era from config name. Expecting something like "sampleSets_2016.cfg". Default is 2016.
     #May want to switch to ("2016.cfg" in config) in case the config file is somewhere that might have a different string, but should be in same directory to be copied to condor properly.
-    temp_era = 2016
-    if "2016" in config:
+    if args.era == 0:
+      if "2016" in config:
         temp_era = 2016
-    if "2017" in config:
+      elif "2017" in config:
         temp_era = 2017
-    if "2018" in config:
+      elif "2018" in config:
         temp_era = 2018
+      else:
+        raise Exception('No era given and none found in config file name. Please specify an era.')
+    else:
+        temp_era = args.era
     process = defaultdict(dict)
     #TODO: Ensure this interprets data correctly
     #TODO: Split between sample set and sample collection configs
@@ -75,7 +79,7 @@ def ConfigList(config):
             "Outpath__" : "%s" % (replaced_outdir) + VersionNumber + "/" + stripped_entry[0] + "/",
             "isData" : "Data" in stripped_entry[0],
             "isFastSim" : "fastsim" in stripped_entry[0],
-            "era" : temp_era, #era from args
+            "era" : temp_era, #era from args or config file
         }
         if process[stripped_entry[0]]["isData"]:
             process[stripped_entry[0]].update( {
@@ -224,6 +228,10 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config',
         default = "sampleconfig.cfg",
         help = 'Path to the input config file.')
+    parser.add_argument('-e', '--era',
+        default = 0, type=int,
+        help = "Era/Year of the config file"
+        )
     parser.add_argument('-o', '--outputdir',
         default = "", 
         help = 'Path to the output directory.')

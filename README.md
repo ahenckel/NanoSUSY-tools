@@ -20,6 +20,23 @@ git clone git@github.com:susy2015/NanoSUSY-tools.git PhysicsTools/NanoSUSYTools
 scram b
 ```
 
+### To run basic postprocessing:
+To submit a job to condor, run the following:
+```cd $CMSSW_BASE/src/PhysicsTools/NanoSUSYTools/python/processors/Condor
+python SubmitLPC.py -c <config_file_era.cfg>
+```
+It is required to have the era (year of production) somewhere in the config file name.
+This defaults to creating directories similar to the input filelist locations in the config file (replace "Pre" with "Post" and append a version number to the final directory name), with subdirectories named by the first entry of each line in the config file.
+To specify a different location, append this to the above command:
+```-o </path/to/location/>```
+To test locally, run:
+```cd $CMSSW_BASE/src/PhysicsTools/NanoSUSYTools/python/processors/Condor
+python Stop0l_postproc.py -i <inputfilelist> -e <era (year)> --isFastSim <True/False> --isData <True/False> --crossSection <#, 1 for data> --nEvents <#>
+```
+The input filelist is a text file like those that are listed inside the config files.
+The output location defaults to the same directory. To specify a different output location, use -o .
+The other arguments listed are those required by the default postprocessing modules. If you are using a different set of modules which do not require these arguments, you do not need to include these arguments.
+
 
 ## To Do:
 * PDF uncertainty module 

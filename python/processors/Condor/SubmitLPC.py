@@ -224,9 +224,6 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config',
         default = "sampleconfig.cfg",
         help = 'Path to the input config file.')
-    parser.add_argument('-e', '--era',
-        default = "2016",type=int,
-        help = 'Era of the config file')
     parser.add_argument('-o', '--outputdir',
         default = "", 
         help = 'Path to the output directory.')
